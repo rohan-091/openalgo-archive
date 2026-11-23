@@ -7,6 +7,7 @@ import pandas as pd
 from database.auth_db import get_auth_token_broker
 from database.token_db import get_token
 from services.broker_busy import BrokerBusyError, broker_busy_result
+from services.yfinance_service import get_history_from_yfinance
 from utils import real_threading
 from utils.broker_backpressure import check_queue_wait
 from utils.constants import VALID_EXCHANGES
@@ -131,10 +132,25 @@ def get_history_with_auth(
     # Validate symbol and exchange before making broker API call
     is_valid, error_msg = validate_symbol_exchange(symbol, exchange)
     if not is_valid:
+        # Fall back to Yahoo Finance for index variations (e.g. NIFTY on NSE) or unmapped symbols
+        yf_ok, yf_data, yf_code = get_history_from_yfinance(
+            symbol, exchange, interval, start_date, end_date
+        )
+        if yf_ok:
+            logger.info(
+                f"Symbol '{symbol}' not found for exchange '{exchange}' in master contract; "
+                f"served via Yahoo Finance public feed."
+            )
+            return yf_ok, yf_data, yf_code
         return False, {"status": "error", "message": error_msg}, 400
 
     broker_module = import_broker_module(broker)
     if broker_module is None:
+        yf_ok, yf_data, yf_code = get_history_from_yfinance(
+            symbol, exchange, interval, start_date, end_date
+        )
+        if yf_ok:
+            return yf_ok, yf_data, yf_code
         return False, {"status": "error", "message": "Broker-specific module not found"}, 404
 
     try:
@@ -164,6 +180,15 @@ def get_history_with_auth(
     except BrokerBusyError as e:
         return broker_busy_result(e, f"History request for {exchange}:{symbol}")
     except Exception as e:
+        logger.warning(
+            f"Broker {broker} history failed for {exchange}:{symbol} ({e}). "
+            f"Falling back to Yahoo Finance public feed."
+        )
+        yf_ok, yf_data, yf_code = get_history_from_yfinance(
+            symbol, exchange, interval, start_date, end_date
+        )
+        if yf_ok:
+            return yf_ok, yf_data, yf_code
         logger.exception(f"Error in broker_module.get_history: {e}")
         return False, {"status": "error", "message": str(e)}, 500
 
@@ -281,11 +306,21 @@ def get_history(
 
         Unsupported source values return a 400 error before either provider is called.
     """
-    if not isinstance(source, str) or source not in {"api", "db"}:
+    if not isinstance(source, str) or source not in {"api", "db", "yfinance", "yahoo"}:
         return (
             False,
-            {"status": "error", "message": "Source must be either 'api' or 'db'."},
+            {"status": "error", "message": "Source must be 'api', 'db', or 'yfinance'."},
             400,
+        )
+
+    # Source: 'yfinance' / 'yahoo' - Fetch directly from Yahoo Finance public market feed
+    if source in {"yfinance", "yahoo"}:
+        return get_history_from_yfinance(
+            symbol=symbol,
+            exchange=exchange,
+            interval=interval,
+            start_date=start_date,
+            end_date=end_date,
         )
 
     # Source: 'db' - Fetch from DuckDB/Historify database
@@ -314,19 +349,49 @@ def get_history(
             api_key, include_feed_token=True
         )
         if AUTH_TOKEN is None:
+            # Fall back to Yahoo Finance if no broker is logged in
+            yf_ok, yf_data, yf_code = get_history_from_yfinance(
+                symbol, exchange, interval, start_date, end_date
+            )
+            if yf_ok:
+                logger.info(
+                    f"No active broker session for {exchange}:{symbol}; served via Yahoo Finance."
+                )
+                return yf_ok, yf_data, yf_code
             return False, {"status": "error", "message": "Invalid openalgo apikey"}, 403
-        return get_history_with_auth(
+        
+        ok, res, code = get_history_with_auth(
             AUTH_TOKEN, FEED_TOKEN, broker_name, symbol, exchange, interval, start_date, end_date
         )
+        if not ok:
+            yf_ok, yf_data, yf_code = get_history_from_yfinance(
+                symbol, exchange, interval, start_date, end_date
+            )
+            if yf_ok:
+                return yf_ok, yf_data, yf_code
+        return ok, res, code
 
     # Case 2: Direct internal call with auth_token and broker
     elif auth_token and broker:
-        return get_history_with_auth(
+        ok, res, code = get_history_with_auth(
             auth_token, feed_token, broker, symbol, exchange, interval, start_date, end_date
         )
+        if not ok:
+            yf_ok, yf_data, yf_code = get_history_from_yfinance(
+                symbol, exchange, interval, start_date, end_date
+            )
+            if yf_ok:
+                return yf_ok, yf_data, yf_code
+        return ok, res, code
 
     # Case 3: Invalid parameters
     else:
+        # Fall back to Yahoo Finance before rejecting
+        yf_ok, yf_data, yf_code = get_history_from_yfinance(
+            symbol, exchange, interval, start_date, end_date
+        )
+        if yf_ok:
+            return yf_ok, yf_data, yf_code
         return (
             False,
             {

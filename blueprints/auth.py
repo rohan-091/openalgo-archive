@@ -306,6 +306,9 @@ def _try_resume_broker_session(username):
         g.broker_login_started_at = datetime.now(UTC)
 
         # Validate token with a lightweight broker API call (funds)
+        from database.settings_db import get_analyze_mode
+        in_analyze_mode = get_analyze_mode()
+
         import importlib
         try:
             broker_module = importlib.import_module(f"broker.{broker}.api.funds")
@@ -315,21 +318,30 @@ def _try_resume_broker_session(username):
                     logger.info(
                         f"Broker token expired or invalid for {username}: {error_message}"
                     )
+                    if not in_analyze_mode:
+                        return None
+                    logger.info(
+                        f"Bypassing token expiry check for {username} because Analyzer mode is active."
+                    )
+            if not in_analyze_mode:
+                funds_data = broker_module.get_margin_data(auth_token)
+                failure_reason = _broker_validation_failure_reason(funds_data)
+                if failure_reason:
+                    logger.info(
+                        f"Broker token expired or invalid for {username}: {failure_reason}"
+                    )
                     return None
-            funds_data = broker_module.get_margin_data(auth_token)
-            failure_reason = _broker_validation_failure_reason(funds_data)
-            if failure_reason:
-                logger.info(
-                    f"Broker token expired or invalid for {username}: {failure_reason}"
-                )
-                return None
-            # get_margin_data returns {} on failure (doesn't raise) — treat empty as invalid
-            if not funds_data:
-                logger.info(f"Broker token expired or invalid for {username} (empty funds response)")
-                return None
+                # get_margin_data returns {} on failure (doesn't raise) — treat empty as invalid
+                if not funds_data:
+                    logger.info(f"Broker token expired or invalid for {username} (empty funds response)")
+                    return None
         except Exception as e:
             logger.info(f"Broker token validation failed for {username}: {e}")
-            return None
+            if not in_analyze_mode:
+                return None
+            logger.info(
+                f"Bypassing broker validation exception for {username} because Analyzer mode is active."
+            )
 
         # The session checked must still be the one stored: a logout, a
         # revoke or a new login meanwhile is not undone by resuming.

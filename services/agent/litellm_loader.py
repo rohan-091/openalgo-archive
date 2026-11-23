@@ -111,10 +111,15 @@ def _install_compat() -> None:
     global _compat_installed
     if _compat_installed:
         return
-    from services.agent import litellm_mcp_gateway
+    from services.agent import litellm_mcp_gateway, litellm_tool_cleaner
 
     try:
         litellm_mcp_gateway.install(importlib.import_module(litellm_mcp_gateway.RESPONSES_MODULE))
     except Exception:
         logger.exception("Could not install the LiteLLM MCP gateway gate")
+
+    try:
+        litellm_tool_cleaner.install(sys.modules.get("litellm"))
+    except Exception:
+        logger.exception("Could not install the LiteLLM tool cleaner")
     _compat_installed = True

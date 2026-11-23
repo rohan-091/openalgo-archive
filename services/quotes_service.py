@@ -11,6 +11,36 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _fetch_yfinance_quote(symbol: str, exchange: str) -> dict[str, Any] | None:
+    """Fetch free quote from Yahoo Finance for NSE/BSE equities as a fallback."""
+    try:
+        exchange_upper = exchange.upper()
+        if exchange_upper not in ("NSE", "BSE"):
+            return None
+        import yfinance as yf
+        ticker_sym = f"{symbol}.NS" if exchange_upper == "NSE" else f"{symbol}.BO"
+        fast = yf.Ticker(ticker_sym).fast_info
+        ltp = float(fast.last_price or 0)
+        if ltp > 0:
+            high = float(fast.day_high or ltp)
+            low = float(fast.day_low or ltp)
+            high = max(high, ltp)
+            low = min(low, ltp)
+            return {
+                "symbol": symbol,
+                "exchange": exchange,
+                "ltp": ltp,
+                "high": high,
+                "low": low,
+                "open": float(fast.open or ltp),
+                "close": float(fast.previous_close or ltp),
+                "volume": int(getattr(fast, "last_volume", 0) or 0),
+            }
+    except Exception as err:
+        logger.debug(f"yfinance quote fallback failed for {symbol}: {err}")
+    return None
+
+
 def validate_symbol_exchange(symbol: str, exchange: str) -> tuple[bool, str | None]:
     """
     Validate that a symbol exists for the given exchange.
@@ -139,6 +169,9 @@ def get_quotes_with_auth(
         quotes = data_handler.get_quotes(symbol, exchange)
 
         if quotes is None:
+            yf_quote = _fetch_yfinance_quote(symbol, exchange)
+            if yf_quote is not None:
+                return True, {"status": "success", "data": yf_quote}, 200
             return False, {"status": "error", "message": "Failed to fetch quotes"}, 500
 
         return True, {"status": "success", "data": quotes}, 200
@@ -153,6 +186,10 @@ def get_quotes_with_auth(
         else:
             # Log other errors normally
             logger.exception(f"Error in broker_module.get_quotes: {e}")
+
+        yf_quote = _fetch_yfinance_quote(symbol, exchange)
+        if yf_quote is not None:
+            return True, {"status": "success", "data": yf_quote}, 200
 
         return False, {"status": "error", "message": str(e)}, 500
 
@@ -189,6 +226,11 @@ def get_quotes(
             api_key, include_feed_token=True
         )
         if AUTH_TOKEN is None:
+            from database.settings_db import get_analyze_mode
+            if get_analyze_mode():
+                yf_quote = _fetch_yfinance_quote(symbol, exchange)
+                if yf_quote is not None:
+                    return True, {"status": "success", "data": yf_quote}, 200
             return False, {"status": "error", "message": "Invalid openalgo apikey"}, 403
         return get_quotes_with_auth(AUTH_TOKEN, FEED_TOKEN, broker_name, symbol, exchange)
 
@@ -329,6 +371,17 @@ def get_multiquotes_with_auth(
             # Log other errors normally
             logger.exception(f"Error in broker_module.get_multiquotes: {e}")
 
+        # Fallback to fetching quotes via _fetch_yfinance_quote if broker fails
+        fallback_results = []
+        for s in valid_symbols:
+            yfq = _fetch_yfinance_quote(s["symbol"], s["exchange"])
+            if yfq:
+                fallback_results.append({"symbol": s["symbol"], "exchange": s["exchange"], "data": yfq})
+            else:
+                fallback_results.append({"symbol": s["symbol"], "exchange": s["exchange"], "error": str(e)})
+        if any("data" in r for r in fallback_results):
+            return True, {"status": "success", "results": results + fallback_results}, 200
+
         return False, {"status": "error", "message": str(e)}, 500
 
 
@@ -362,6 +415,11 @@ def get_multiquotes(
             api_key, include_feed_token=True
         )
         if AUTH_TOKEN is None:
+            from database.settings_db import get_analyze_mode
+            if get_analyze_mode():
+                yf_quote = _fetch_yfinance_quote(symbol, exchange)
+                if yf_quote is not None:
+                    return True, {"status": "success", "data": yf_quote}, 200
             return False, {"status": "error", "message": "Invalid openalgo apikey"}, 403
         return get_multiquotes_with_auth(AUTH_TOKEN, FEED_TOKEN, broker_name, symbols)
 

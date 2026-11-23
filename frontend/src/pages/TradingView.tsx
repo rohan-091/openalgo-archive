@@ -1,5 +1,14 @@
-import { AlertTriangle, BookOpen, Copy, ExternalLink, RefreshCw } from 'lucide-react'
+import {
+  AlertTriangle,
+  BarChart3,
+  BookOpen,
+  Columns,
+  Copy,
+  ExternalLink,
+  RefreshCw,
+} from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { TradingViewChart } from '@/components/tradingview/TradingViewChart'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -35,9 +44,12 @@ const PRODUCTS = [
 export default function TradingView() {
   const { tradingExchanges, defaultExchange, isCrypto } = useSupportedExchanges()
 
+  // Main Page Tab: 'chart' | 'config' | 'split'
+  const [activeTab, setActiveTab] = useState<'chart' | 'config' | 'split'>('chart')
+
   // Form state
   const [alertMode, setAlertMode] = useState<'strategy' | 'line'>('strategy')
-  const [symbol, setSymbol] = useState(isCrypto ? 'BTCUSDFUT' : 'NHPC')
+  const [symbol, setSymbol] = useState(isCrypto ? 'BTCUSDFUT' : 'NIFTY')
   const [exchange, setExchange] = useState(defaultExchange)
   const [product, setProduct] = useState(isCrypto ? 'NRML' : 'MIS')
   const [action, setAction] = useState('BUY')
@@ -218,18 +230,42 @@ export default function TradingView() {
   }
 
   return (
-    <div className="container mx-auto py-6 px-4 max-w-6xl">
+    <div className="container mx-auto py-6 px-4 max-w-7xl">
       {/* Header */}
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold">TradingView Configuration</h1>
-        <p className="text-muted-foreground mt-2">
-          Generate webhook configuration for TradingView strategy alerts
+      <div className="text-center mb-6">
+        <h1 className="text-3xl font-bold">TradingView Chart & Webhook Terminal</h1>
+        <p className="text-muted-foreground mt-1">
+          Live real-time candlestick charts with built-in indicators and webhook execution bridge
         </p>
       </div>
 
+      {/* Main View Switcher Tabs */}
+      <div className="flex justify-center mb-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as 'chart' | 'config' | 'split')}
+          className="w-full max-w-md"
+        >
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="chart" className="flex items-center gap-1.5">
+              <BarChart3 className="h-4 w-4" />
+              Live Chart
+            </TabsTrigger>
+            <TabsTrigger value="config" className="flex items-center gap-1.5">
+              <Copy className="h-4 w-4" />
+              Webhook Setup
+            </TabsTrigger>
+            <TabsTrigger value="split" className="flex items-center gap-1.5">
+              <Columns className="h-4 w-4" />
+              Split View
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
       {/* Localhost Warning - only show if HOST_SERVER is not configured to external URL */}
-      {hostConfig?.is_localhost && (
-        <Alert variant="destructive" className="mb-8">
+      {hostConfig?.is_localhost && activeTab !== 'chart' && (
+        <Alert variant="destructive" className="mb-6">
           <AlertTriangle className="h-5 w-5" />
           <AlertDescription className="ml-2">
             <strong>Webhook URL not accessible!</strong> TradingView cannot send alerts to
@@ -241,225 +277,265 @@ export default function TradingView() {
         </Alert>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Left Column - Configuration */}
-        <div className="space-y-6">
-          {/* Webhook URL Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-primary">Webhook URL</CardTitle>
-              <CardDescription>Use this URL in your TradingView alerts</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-                <code className="flex-1 text-sm font-mono truncate" title={webhookUrl}>
-                  {webhookUrl}
-                </code>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => copyToClipboard(webhookUrl, 'Webhook URL')}
-                >
-                  <Copy className="h-4 w-4 mr-1" />
-                  Copy
-                </Button>
+      {/* Live Chart View */}
+      {(activeTab === 'chart' || activeTab === 'split') && (
+        <div className="space-y-4 mb-8">
+          <TradingViewChart
+            initialSymbol={symbol ? `${exchange}:${symbol}` : 'NSE:NIFTY'}
+            height={activeTab === 'split' ? '500px' : '700px'}
+            onSelectForTrading={(s, ex) => {
+              setSymbol(s)
+              setExchange(ex)
+            }}
+          />
+
+          {activeTab === 'chart' && (
+            <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-lg bg-muted/40 border">
+              <div>
+                <span className="text-sm font-semibold">Active Charted Symbol: </span>
+                <span className="font-mono text-sm bg-primary/10 text-primary px-2 py-0.5 rounded ml-1">
+                  {exchange}:{symbol}
+                </span>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Live streaming and historical candlestick data provided directly by TradingView without broker data subscription.
+                </p>
               </div>
-            </CardContent>
-          </Card>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setActiveTab('config')}
+                className="gap-1.5"
+              >
+                <Copy className="h-4 w-4" />
+                Configure Webhook Alert for {symbol}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
-          {/* Configuration Form */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Configuration</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Mode Selector */}
-              <Tabs value={alertMode} onValueChange={(v) => setAlertMode(v as 'strategy' | 'line')}>
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="strategy">Strategy Alert</TabsTrigger>
-                  <TabsTrigger value="line">Line Alert</TabsTrigger>
-                </TabsList>
-              </Tabs>
-
-              {/* Symbol Search */}
-              <div className="space-y-2">
-                <Label htmlFor="symbol">Symbol</Label>
-                <div className="relative" ref={inputWrapperRef}>
-                  <Input
-                    id="symbol"
-                    type="text"
-                    placeholder="Search for symbol..."
-                    value={symbol}
-                    onChange={(e) => setSymbol(e.target.value)}
-                    onFocus={() => {
-                      if (symbol.length >= 2) setShowResults(true)
-                    }}
-                    autoComplete="off"
-                  />
-                  {isLoading && (
-                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                    </div>
-                  )}
-
-                  {/* Autocomplete Results */}
-                  {showResults && searchResults.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-background border rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                      {searchResults.map((result, index) => (
-                        <div
-                          key={index}
-                          className="p-3 border-b last:border-b-0 hover:bg-muted cursor-pointer"
-                          onClick={() => handleResultClick(result)}
-                        >
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <div className="font-medium">{result.symbol}</div>
-                              <div className="text-xs text-muted-foreground">{result.name}</div>
-                            </div>
-                            <span className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded">
-                              {result.exchange}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+      {/* Webhook Configuration View */}
+      {(activeTab === 'config' || activeTab === 'split') && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Left Column - Configuration */}
+          <div className="space-y-6">
+            {/* Webhook URL Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-primary">Webhook URL</CardTitle>
+                <CardDescription>Use this URL in your TradingView alerts</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                  <code className="flex-1 text-sm font-mono truncate" title={webhookUrl}>
+                    {webhookUrl}
+                  </code>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => copyToClipboard(webhookUrl, 'Webhook URL')}
+                  >
+                    <Copy className="h-4 w-4 mr-1" />
+                    Copy
+                  </Button>
                 </div>
-              </div>
+              </CardContent>
+            </Card>
 
-              {/* Exchange */}
-              <div className="space-y-2">
-                <Label htmlFor="exchange">Exchange</Label>
-                <Select value={exchange} onValueChange={setExchange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select Exchange" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {tradingExchanges.map((ex) => (
-                      <SelectItem key={ex.value} value={ex.value}>
-                        {ex.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            {/* Configuration Form */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Configuration</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Mode Selector */}
+                <Tabs value={alertMode} onValueChange={(v) => setAlertMode(v as 'strategy' | 'line')}>
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="strategy">Strategy Alert</TabsTrigger>
+                    <TabsTrigger value="line">Line Alert</TabsTrigger>
+                  </TabsList>
+                </Tabs>
 
-              {/* Product Type (hidden for crypto — Delta Exchange ignores it) */}
-              {!isCrypto && (
+                {/* Symbol Search */}
                 <div className="space-y-2">
-                  <Label htmlFor="product">Product Type</Label>
-                  <Select value={product} onValueChange={setProduct}>
+                  <Label htmlFor="symbol">Symbol</Label>
+                  <div className="relative" ref={inputWrapperRef}>
+                    <Input
+                      id="symbol"
+                      type="text"
+                      placeholder="Search for symbol..."
+                      value={symbol}
+                      onChange={(e) => setSymbol(e.target.value)}
+                      onFocus={() => {
+                        if (symbol.length >= 2) setShowResults(true)
+                      }}
+                      autoComplete="off"
+                    />
+                    {isLoading && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                      </div>
+                    )}
+
+                    {/* Autocomplete Results */}
+                    {showResults && searchResults.length > 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-background border rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                        {searchResults.map((result, index) => (
+                          <div
+                            key={index}
+                            className="p-3 border-b last:border-b-0 hover:bg-muted cursor-pointer"
+                            onClick={() => handleResultClick(result)}
+                          >
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <div className="font-medium">{result.symbol}</div>
+                                <div className="text-xs text-muted-foreground">{result.name}</div>
+                              </div>
+                              <span className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded">
+                                {result.exchange}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Exchange */}
+                <div className="space-y-2">
+                  <Label htmlFor="exchange">Exchange</Label>
+                  <Select value={exchange} onValueChange={setExchange}>
                     <SelectTrigger>
-                      <SelectValue />
+                      <SelectValue placeholder="Select Exchange" />
                     </SelectTrigger>
                     <SelectContent>
-                      {PRODUCTS.map((p) => (
-                        <SelectItem key={p.value} value={p.value}>
-                          {p.label}
+                      {tradingExchanges.map((ex) => (
+                        <SelectItem key={ex.value} value={ex.value}>
+                          {ex.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-              )}
 
-              {/* Line Alert Mode Fields */}
-              {alertMode === 'line' && (
-                <>
+                {/* Product Type (hidden for crypto — Delta Exchange ignores it) */}
+                {!isCrypto && (
                   <div className="space-y-2">
-                    <Label htmlFor="action">Action</Label>
-                    <Select value={action} onValueChange={setAction}>
+                    <Label htmlFor="product">Product Type</Label>
+                    <Select value={product} onValueChange={setProduct}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="BUY">BUY</SelectItem>
-                        <SelectItem value="SELL">SELL</SelectItem>
+                        {PRODUCTS.map((p) => (
+                          <SelectItem key={p.value} value={p.value}>
+                            {p.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="quantity">Quantity</Label>
-                    <Input
-                      id="quantity"
-                      type="number"
-                      min="1"
-                      value={quantity}
-                      onChange={(e) => setQuantity(e.target.value)}
-                      placeholder="Enter quantity"
-                    />
-                  </div>
-                </>
-              )}
-
-              {/* Generate Button */}
-              <Button onClick={() => generateJson()} className="w-full">
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Generate JSON
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right Column - Output */}
-        <div className="space-y-6">
-          {/* JSON Output */}
-          <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <CardTitle>Generated JSON</CardTitle>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => copyToClipboard(generatedJson, 'JSON')}
-                  disabled={!generatedJson}
-                >
-                  <Copy className="h-4 w-4 mr-1" />
-                  Copy
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-lg overflow-hidden border bg-background h-64">
-                {generatedJson ? (
-                  <JsonEditor value={generatedJson} readOnly className="h-full" />
-                ) : (
-                  <div className="p-8 text-center text-muted-foreground">
-                    <p>Fill in the form and click "Generate JSON" to see the output</p>
-                  </div>
                 )}
-              </div>
-            </CardContent>
-          </Card>
 
-          {/* Documentation Card */}
-          <Card className="bg-accent text-accent-foreground">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BookOpen className="h-5 w-5" />
-                Need Help?
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <p>
-                Learn how to set up automated trading using TradingView webhooks with our
-                step-by-step guide.
-              </p>
-              <Button asChild variant="default">
-                <a
-                  href="https://docs.openalgo.in/trading-platform/tradingview"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  View Documentation
-                  <ExternalLink className="h-4 w-4 ml-2" />
-                </a>
-              </Button>
-            </CardContent>
-          </Card>
+                {/* Line Alert Mode Fields */}
+                {alertMode === 'line' && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="action">Action</Label>
+                      <Select value={action} onValueChange={setAction}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="BUY">BUY</SelectItem>
+                          <SelectItem value="SELL">SELL</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="quantity">Quantity</Label>
+                      <Input
+                        id="quantity"
+                        type="number"
+                        min="1"
+                        value={quantity}
+                        onChange={(e) => setQuantity(e.target.value)}
+                        placeholder="Enter quantity"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Generate Button */}
+                <Button onClick={() => generateJson()} className="w-full">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Generate JSON
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right Column - Output */}
+          <div className="space-y-6">
+            {/* JSON Output */}
+            <Card>
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <CardTitle>Generated JSON</CardTitle>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => copyToClipboard(generatedJson, 'JSON')}
+                    disabled={!generatedJson}
+                  >
+                    <Copy className="h-4 w-4 mr-1" />
+                    Copy
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-lg overflow-hidden border bg-background h-64">
+                  {generatedJson ? (
+                    <JsonEditor value={generatedJson} readOnly className="h-full" />
+                  ) : (
+                    <div className="p-8 text-center text-muted-foreground">
+                      <p>Fill in the form and click "Generate JSON" to see the output</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Documentation Card */}
+            <Card className="bg-accent text-accent-foreground">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BookOpen className="h-5 w-5" />
+                  Need Help?
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p>
+                  Learn how to set up automated trading using TradingView webhooks with our
+                  step-by-step guide.
+                </p>
+                <Button asChild variant="default">
+                  <a
+                    href="https://docs.openalgo.in/trading-platform/tradingview"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    View Documentation
+                    <ExternalLink className="h-4 w-4 ml-2" />
+                  </a>
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

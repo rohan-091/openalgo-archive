@@ -148,3 +148,7 @@ docs/audit/qa_audit/**/qa_sandbox_*.csv
 docs/audit/qa_audit/**/qa_live_*.csv
 # Excel writes a ~$-prefixed lock file next to any workbook left open.
 docs/audit/qa_audit/**/~$*
+
+# User trading runtime state & personal journals (Public repo safety)
+TRADES.md
+trading_agent/active_trades_state.json

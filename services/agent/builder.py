@@ -540,13 +540,16 @@ def _register_chatgpt_models() -> None:
     # Under eventlet, LiteLLM's sync-to-async hops must run on a real thread or
     # a streamed answer can fail part way (#2081). A no-op on gthread and the
     # development server.
-    from services.agent import litellm_eventlet, litellm_tool_args
+    from services.agent import litellm_eventlet, litellm_tool_args, litellm_tool_cleaner
 
     litellm_eventlet.install()
     # Parallel tool calls over the Responses bridge can arrive with their
     # arguments only in the closing event, which LiteLLM drops; without this a
     # question naming two instruments fails every call in the batch.
     litellm_tool_args.install()
+    # Strip non-standard agno fields (requires_confirmation, external_execution)
+    # from tools so strict OpenAI-compatible backends like Gemini do not reject them.
+    litellm_tool_cleaner.install()
 
 
 #: Providers whose API takes explicit cache breakpoints for Claude models. A

@@ -25,7 +25,10 @@ def get_csp_config():
         csp_config["default-src"] = default_src
 
     # Script source directive
-    script_src = os.getenv("CSP_SCRIPT_SRC", "'self' https://cdn.socket.io")
+    script_src = os.getenv(
+        "CSP_SCRIPT_SRC",
+        "'self' https://cdn.socket.io https://s3.tradingview.com https://*.tradingview.com",
+    )
     if script_src:
         csp_config["script-src"] = script_src
 
@@ -40,7 +43,10 @@ def get_csp_config():
         csp_config["img-src"] = img_src
 
     # Connect source directive (for WebSockets, etc.)
-    connect_src = os.getenv("CSP_CONNECT_SRC", "'self' wss: ws:")
+    connect_src = os.getenv(
+        "CSP_CONNECT_SRC",
+        "'self' wss: ws: https://*.tradingview.com wss://*.tradingview.com",
+    )
     if connect_src:
         csp_config["connect-src"] = connect_src
 
@@ -60,7 +66,10 @@ def get_csp_config():
         csp_config["media-src"] = media_src
 
     # Frame source directive
-    frame_src = os.getenv("CSP_FRAME_SRC", "'self'")
+    frame_src = os.getenv(
+        "CSP_FRAME_SRC",
+        "'self' https://*.tradingview.com https://tradingview.com https://s.tradingview.com",
+    )
     if frame_src:
         csp_config["frame-src"] = frame_src
 
